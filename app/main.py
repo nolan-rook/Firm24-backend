@@ -92,6 +92,9 @@ async def question(request: Request):
             inputs={"question": question, "previous": f"Vraag: {previous_question}\nAntwoord: {previous_answer}"}
         )
         rephrased_question = deployment.choices[0].message.content
+        # Example of setting a default empty list if not already defined
+        if 'quick_reply_options' not in locals():
+            quick_reply_options = []
 
         return {
             "rephrased_question": rephrased_question,
