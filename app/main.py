@@ -56,45 +56,35 @@ async def question(request: Request):
     previous_question = data.get("previous_question")
     previous_answer = data.get("previous_answer")
 
-    # Log the incoming request data
     print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
-    # Combine initial questions with main questions for seamless transition
-    combined_questions_with_options = questions_with_options
+    # Evaluate user input before proceeding
+    evaluation_deployment = client.deployments.invoke(
+        key="Firm24-evaluate-user-input",
+        context={"environments": []},
+        inputs={"previous_question": previous_question, "user_input": previous_answer}
+    )
+    evaluation_result = evaluation_deployment.choices[0].message.content
+
+    if evaluation_result == "No":
+        # Handle the response when the input is not a valid answer
+        return {"rephrased_question": "Could you please clarify your answer?", "quick_reply_options": []}
 
     if question_index is None or question_index < 1:
         raise HTTPException(status_code=400, detail="Invalid question index")
 
-    # Log the start of the condition checking loop
     print(f"Starting condition checking loop for question_index={question_index}")
-
-    while question_index <= len(combined_questions_with_options):
-        q_index, question, quick_reply_options, condition = combined_questions_with_options[question_index - 1]
-
-        # Log current question and condition
-        print(f"Checking question {q_index} with condition '{condition}'")
-
-        if condition:
-            condition_met = is_condition_met(condition, previous_answer, combined_questions_with_options)
-            # Log the result of the condition check
-            print(f"Condition '{condition}' met: {condition_met}")
-            if not condition_met:
-                question_index += 1
-                # Log the increment of question_index if condition not met
-                print(f"Condition not met, skipping to question_index={question_index}")
-                continue
-
-        # Log the question being returned
-        print(f"Condition met or no condition for question {q_index}, proceeding to return this question.")
-        break
-
-    if question_index > len(combined_questions_with_options):
+    
+    # Assuming there's a list of questions with conditions to check
+    if question_index <= len(questions_with_options):
+        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
+        # Your logic for checking the condition and deciding on the next question goes here
+    
+    else:
         raise HTTPException(status_code=400, detail="No suitable question found")
 
-    # Assuming previous context logic remains the same
     previous_context = f"Vraag: {previous_question}\nAntwoord: {previous_answer}" if previous_question and previous_answer else ""
 
-    # Assuming deployment logic remains the same
     deployment = client.deployments.invoke(
         key="Firm24_vragenlijst",
         context={"environments": []},
@@ -102,7 +92,6 @@ async def question(request: Request):
     )
     rephrased_question = deployment.choices[0].message.content
 
-    # Log the question being sent to the frontend
     print(f"Sending to frontend: rephrased_question='{rephrased_question}', quick_reply_options={quick_reply_options}")
 
     return {"rephrased_question": rephrased_question, "quick_reply_options": quick_reply_options}
