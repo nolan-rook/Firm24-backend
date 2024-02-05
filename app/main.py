@@ -60,7 +60,7 @@ async def question(request: Request):
     print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
     # Combine initial questions with main questions for seamless transition
-    combined_questions_with_options = all_questions_with_options
+    combined_questions_with_options = questions_with_options
 
     if question_index is None or question_index < 1:
         raise HTTPException(status_code=400, detail="Invalid question index")
