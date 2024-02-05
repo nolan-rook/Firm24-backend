@@ -61,7 +61,7 @@ async def question(request: Request):
         evaluation_deployment = client.deployments.invoke(
             key="Firm24-evaluate-user-input",
             context={"environments": []},
-            inputs={"previous_question": previous_question, "user_input": previous_answer}
+            inputs={"previous_question": previous_question, "previous_answer": previous_answer}
         )
         evaluation_result = evaluation_deployment.choices[0].message.content
 
@@ -69,7 +69,7 @@ async def question(request: Request):
             clarification_deployment = client.deployments.invoke(
                 key="Firm24-handle-clarification",
                 context={"environments": []},
-                inputs={"previous_question": previous_question, "user_input": previous_answer}
+                inputs={"previous_question": previous_question, "previous_answer": previous_answer}
             )
             clarification_response = clarification_deployment.choices[0].message.content
             return {"rephrased_question": clarification_response, "quick_reply_options": [], "chatbot_state": "CLARIFYING_ANSWER"}
