@@ -38,7 +38,7 @@ def load_questions_from_sheet(sheet_path):
         quick_reply_options = []
         if row[1]:  # Check if there are quick reply options in the second column
             # Split options on semicolon and strip whitespace
-            quick_reply_options = [option.strip() for option in row[1].split(',')]
+            quick_reply_options = [option.strip() for option in row[1].split(';')]
         
         if question:
             # We will not use question_index or condition as they are not present in the Excel file
