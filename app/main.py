@@ -62,7 +62,7 @@ async def question(request: Request):
     evaluation_deployment = client.deployments.invoke(
         key="Firm24-evaluate-user-input",
         context={"environments": []},
-        inputs={"previous_question": previous_question, "user_input": previous_answer}
+        inputs={"previous_question": previous_question, "previous_answer": previous_answer}
     )
     evaluation_result = evaluation_deployment.choices[0].message.content
 
