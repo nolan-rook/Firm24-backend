@@ -55,57 +55,46 @@ async def question(request: Request):
     question_index = data.get("question_index")
     previous_question = data.get("previous_question")
     previous_answer = data.get("previous_answer")
-    chatbot_state = data.get("chatbot_state", "ASKING_QUESTION")  # Default state is ASKING_QUESTION
 
-    if chatbot_state == "ASKING_QUESTION":
-        evaluation_deployment = client.deployments.invoke(
-            key="Firm24-evaluate-user-input",
-            context={"environments": []},
-            inputs={"previous_question": previous_question, "previous_answer": previous_answer}
-        )
-        evaluation_result = evaluation_deployment.choices[0].message.content
+    print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
-        if evaluation_result == "No":
-            clarification_deployment = client.deployments.invoke(
-                key="Firm24-handle-clarification",
-                context={"environments": []},
-                inputs={"previous_question": previous_question, "previous_answer": previous_answer}
-            )
-            clarification_response = clarification_deployment.choices[0].message.content
-            return {"rephrased_question": clarification_response, "quick_reply_options": [], "chatbot_state": "CLARIFYING_ANSWER"}
+    # Evaluate user input before proceeding
+    evaluation_deployment = client.deployments.invoke(
+        key="Firm24-evaluate-user-input",
+        context={"environments": []},
+        inputs={"previous_question": previous_question, "previous_answer": previous_answer}
+    )
+    evaluation_result = evaluation_deployment.choices[0].message.content
 
-    # Proceed with next question or continue clarification based on the state
-    if chatbot_state in ["CLARIFYING_ANSWER", "Yes"]:
-        if question_index is None or question_index < 1 or question_index > len(questions_with_options):
-            raise HTTPException(status_code=400, detail="Invalid question index")
+    if evaluation_result == "No":
+        # Handle the response when the input is not a valid answer
+        return {"rephrased_question": "Could you please clarify your answer?", "quick_reply_options": []}
 
-        # Assuming questions_with_options is a list of tuples (index, question, options, condition)
-        question = questions_with_options[question_index - 1][1]  # Adjust indexing as needed
-        quick_reply_options = questions_with_options[question_index - 1][2]  # Adjust indexing as needed
+    if question_index is None or question_index < 1:
+        raise HTTPException(status_code=400, detail="Invalid question index")
 
-        # If clarification was handled, reset state to ask next question
-        chatbot_state = "ASKING_QUESTION" if chatbot_state == "CLARIFYING_ANSWER" else chatbot_state
+    print(f"Starting condition checking loop for question_index={question_index}")
+    
+    # Assuming there's a list of questions with conditions to check
+    if question_index <= len(questions_with_options):
+        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
+        # Your logic for checking the condition and deciding on the next question goes here
+    
+    else:
+        raise HTTPException(status_code=400, detail="No suitable question found")
 
-        deployment = client.deployments.invoke(
-            key="Firm24_vragenlijst",
-            context={"environments": []},
-            inputs={"question": question, "previous": f"Vraag: {previous_question}\nAntwoord: {previous_answer}"}
-        )
-        rephrased_question = deployment.choices[0].message.content
-        # Example of setting a default empty list if not already defined
-        if 'quick_reply_options' not in locals():
-            quick_reply_options = []
+    previous_context = f"Vraag: {previous_question}\nAntwoord: {previous_answer}" if previous_question and previous_answer else ""
 
-        return {
-            "rephrased_question": rephrased_question,
-            "quick_reply_options": quick_reply_options,
-            "chatbot_state": chatbot_state,
-            "question_index": question_index + 1  # Prepare index for next question
-        }
+    deployment = client.deployments.invoke(
+        key="Firm24_vragenlijst",
+        context={"environments": []},
+        inputs={"question": question, "previous": previous_context}
+    )
+    rephrased_question = deployment.choices[0].message.content
 
-    # In case of unexpected state, provide a generic error message
-    return {"error": "Unexpected chatbot state", "chatbot_state": chatbot_state}
+    print(f"Sending to frontend: rephrased_question='{rephrased_question}', quick_reply_options={quick_reply_options}")
 
+    return {"rephrased_question": rephrased_question, "quick_reply_options": quick_reply_options}
 
 def is_condition_met(condition, previous_answer, combined_questions_with_options):
     condition_question_index, valid_answers = condition.split('=')
