@@ -68,18 +68,17 @@ async def question(request: Request):
 
     if evaluation_result == "Nee":
         # Nieuwe logica hier: Stuur previous_answer naar een nieuwe deployment
-        # Doe iets met het previous_answer, bijvoorbeeld een nieuwe vraag genereren of feedback geven
-        # Dit is een placeholder voor uw logica die het antwoord verwerkt
         handle_answer_deployment = client.deployments.invoke(
             key="Firm24-handle-clarification",
             inputs={"previous_answer": previous_answer, "previous_question": previous_question}
         )
-        handle_answer = deployment.choices[0].message.content
+        handle_answer = handle_answer_deployment.choices[0].message.content  # Corrected variable name here
 
         # Forceer het volgende evaluation_result op "Ja" om terug te keren naar de stroom
         evaluation_result = "Ja"
         
         return {"rephrased_question": handle_answer, "quick_reply_options": []}
+
 
     if question_index is None or question_index < 1:
         raise HTTPException(status_code=400, detail="Invalid question index")
