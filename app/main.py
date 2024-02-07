@@ -101,10 +101,12 @@ async def question(request: Request):
     if question_index <= len(questions_with_options):
         _, next_question, quick_reply_options, _ = questions_with_options[question_index - 1]
         
+        previous_context = f"Vraag: {previous_question}\nAntwoord: {previous_answer}" if previous_question and previous_answer else ""
+        
         rephrased_question = client.deployments.invoke(
             key="Firm24_vragenlijst",
             context={"environments": []},
-            inputs={"question": next_question, "previous": ""}
+            inputs={"question": next_question, "previous": previous_context}
         ).choices[0].message.content
 
         print(f"Sending to frontend: rephrased_question='{rephrased_question}', quick_reply_options={quick_reply_options}")
