@@ -58,13 +58,17 @@ async def question(request: Request):
 
     print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
-    # Evaluate user input before proceeding
-    evaluation_deployment = client.deployments.invoke(
-        key="Firm24-evaluate-user-input",
-          context={"language": ["Dutch"]},
-        inputs={"previous_question": previous_question, "previous_answer": previous_answer}
-    )
-    evaluation_result = evaluation_deployment.choices[0].message.content
+    # Als de vorige vraag was om het antwoord te verduidelijken, ga dan altijd door met Ja
+    if previous_question == "Could you please clarify your answer?":
+        evaluation_result = "Ja"  # Simuleer een 'Ja' antwoord voor deze specifieke follow-up vraag
+    else:
+        # Voer de normale evaluatie uit als het geen verduidelijkingsverzoek is
+        evaluation_deployment = client.deployments.invoke(
+            key="Firm24-evaluate-user-input",
+            context={"language": ["Dutch"]},
+            inputs={"previous_question": previous_question, "previous_answer": previous_answer}
+        )
+        evaluation_result = evaluation_deployment.choices[0].message.content
 
     if evaluation_result == "Nee":
         # Handle the response when the input is not a valid answer
