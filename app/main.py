@@ -61,12 +61,12 @@ async def question(request: Request):
     # Evaluate user input before proceeding
     evaluation_deployment = client.deployments.invoke(
         key="Firm24-evaluate-user-input",
-        context={"environments": []},
+          context={"language": ["Dutch"]},
         inputs={"previous_question": previous_question, "previous_answer": previous_answer}
     )
     evaluation_result = evaluation_deployment.choices[0].message.content
 
-    if evaluation_result == "No":
+    if evaluation_result == "Nee":
         # Handle the response when the input is not a valid answer
         return {"rephrased_question": "Could you please clarify your answer?", "quick_reply_options": []}
 
