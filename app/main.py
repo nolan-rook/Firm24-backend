@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from orquesta_sdk import Orquesta, OrquestaClientOptions
@@ -47,7 +47,6 @@ def load_questions_from_sheet(sheet_path):
     print(questions_with_options)
     return questions_with_options
 
-
 # Load the questions and options when the app starts
 questions_with_options = load_questions_from_sheet("data/Firm24_lijst.xlsx")
 
@@ -61,20 +60,21 @@ async def question(request: Request):
 
     print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
-    # Check if we need to resend the previous question first
     if user_id in current_question_indices:
-        # If there is a stored index, it means we need to resend the original question
-        question_index = current_question_indices[user_id]
-        # Remove the index as we're now handling the original question
-        del current_question_indices[user_id]
-
-        # Fetch the original question to resend
-        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
-
+        # Check if we need to resend the previous question after clarification
+        original_question_index = current_question_indices[user_id]
+        
         # Resend the original question
-        return {"rephrased_question": question, "quick_reply_options": quick_reply_options}
+        _, question, quick_reply_options, _ = questions_with_options[original_question_index - 1]
+        rephrased_question = client.deployments.invoke(
+            key="Firm24_vragenlijst",
+            context={"language": ["Dutch"]},
+            inputs={"question": question, "previous": ""}
+        ).choices[0].message.content
 
-    # Continue with standard evaluation if it's not a follow-up to a "Nee" response
+        return {"rephrased_question": rephrased_question, "quick_reply_options": quick_reply_options}
+
+    # Continue with standard evaluation
     evaluation_deployment = client.deployments.invoke(
         key="Firm24-evaluate-user-input",
         context={"language": ["Dutch"]},
@@ -83,44 +83,38 @@ async def question(request: Request):
     evaluation_result = evaluation_deployment.choices[0].message.content
 
     if evaluation_result == "Nee":
-        # After handling the clarification, store the index to return to this question later
-        current_question_indices[user_id] = question_index
-
-        # Send the clarification message to the user and get the response
+        # Handle clarification
         handle_answer_deployment = client.deployments.invoke(
             key="Firm24-handle-clarification",
             inputs={"previous_answer": previous_answer, "previous_question": previous_question}
         )
         handle_answer = handle_answer_deployment.choices[0].message.content
 
-        # Return the clarification message without changing the question index
-        return {"rephrased_question": handle_answer, "quick_reply_options": []}
+        # Store the index to return to this question later
+        current_question_indices[user_id] = question_index
+        
+        return {"rephrased_question": handle_answer, "quick_reply_options": quick_reply_options}
 
-    if question_index is None or question_index < 1:
+    # If the answer is evaluated as "Ja" or we're past the clarification, fetch the next question
+    if question_index is None or question_index < 1 or question_index > len(questions_with_options):
         raise HTTPException(status_code=400, detail="Invalid question index")
 
-    print(f"Starting condition checking loop for question_index={question_index}")
-    
     # Assuming there's a list of questions with conditions to check
     if question_index <= len(questions_with_options):
-        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
-        # Your logic for checking the condition and deciding on the next question goes here
+        _, next_question, quick_reply_options, _ = questions_with_options[question_index - 1]
+        
+        # Rephrase the next question using the 'deployment'
+        rephrased_question = client.deployments.invoke(
+            key="Firm24_vragenlijst",
+            context={"environments": []},
+            inputs={"question": next_question, "previous": ""}
+        ).choices[0].message.content
+        
+        return {"rephrased_question": rephrased_question, "quick_reply_options": quick_reply_options}
     
     else:
         raise HTTPException(status_code=400, detail="No suitable question found")
 
-    previous_context = f"Vraag: {previous_question}\nAntwoord: {previous_answer}" if previous_question and previous_answer else ""
-
-    deployment = client.deployments.invoke(
-        key="Firm24_vragenlijst",
-        context={"environments": []},
-        inputs={"question": question, "previous": previous_context}
-    )
-    rephrased_question = deployment.choices[0].message.content
-
-    print(f"Sending to frontend: rephrased_question='{rephrased_question}', quick_reply_options={quick_reply_options}")
-
-    return {"rephrased_question": rephrased_question, "quick_reply_options": quick_reply_options}
 
 def is_condition_met(condition, previous_answer, combined_questions_with_options):
     condition_question_index, valid_answers = condition.split('=')
