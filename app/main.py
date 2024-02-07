@@ -28,6 +28,7 @@ def init_orquesta_client():
 
 client = init_orquesta_client()
 
+current_question_indices = {}
 
 def load_questions_from_sheet(sheet_path):
     questions_with_options = []
@@ -49,16 +50,31 @@ def load_questions_from_sheet(sheet_path):
 
 # Load the questions and options when the app starts
 questions_with_options = load_questions_from_sheet("data/Firm24_lijst.xlsx")
+
 @app.post("/question/")
 async def question(request: Request):
     data = await request.json()
+    user_id = data.get("user_id")
     question_index = data.get("question_index")
     previous_question = data.get("previous_question")
     previous_answer = data.get("previous_answer")
 
     print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
-    # Standaard evaluatie
+    # Check if we need to resend the previous question first
+    if user_id in current_question_indices:
+        # If there is a stored index, it means we need to resend the original question
+        question_index = current_question_indices[user_id]
+        # Remove the index as we're now handling the original question
+        del current_question_indices[user_id]
+
+        # Fetch the original question to resend
+        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
+
+        # Resend the original question
+        return {"rephrased_question": question, "quick_reply_options": quick_reply_options}
+
+    # Continue with standard evaluation if it's not a follow-up to a "Nee" response
     evaluation_deployment = client.deployments.invoke(
         key="Firm24-evaluate-user-input",
         context={"language": ["Dutch"]},
@@ -67,18 +83,18 @@ async def question(request: Request):
     evaluation_result = evaluation_deployment.choices[0].message.content
 
     if evaluation_result == "Nee":
-        # Nieuwe logica hier: Stuur previous_answer naar een nieuwe deployment
+        # After handling the clarification, store the index to return to this question later
+        current_question_indices[user_id] = question_index
+
+        # Send the clarification message to the user and get the response
         handle_answer_deployment = client.deployments.invoke(
             key="Firm24-handle-clarification",
             inputs={"previous_answer": previous_answer, "previous_question": previous_question}
         )
-        handle_answer = handle_answer_deployment.choices[0].message.content  # Corrected variable name here
+        handle_answer = handle_answer_deployment.choices[0].message.content
 
-        # Forceer het volgende evaluation_result op "Ja" om terug te keren naar de stroom
-        evaluation_result = "Ja"
-        
+        # Return the clarification message without changing the question index
         return {"rephrased_question": handle_answer, "quick_reply_options": []}
-
 
     if question_index is None or question_index < 1:
         raise HTTPException(status_code=400, detail="Invalid question index")
