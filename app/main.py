@@ -60,20 +60,7 @@ async def question(request: Request):
 
     print(f"Received question_index={question_index}, previous_answer='{previous_answer}'")
 
-    # Check if we need to resend the previous question first
-    if user_id in current_question_indices:
-        # If there is a stored index, it means we need to resend the original question
-        question_index = current_question_indices[user_id]
-        # Remove the index as we're now handling the original question
-        del current_question_indices[user_id]
-
-        # Fetch the original question to resend
-        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
-
-        # Resend the original question
-        return {"rephrased_question": question, "quick_reply_options": quick_reply_options}
-
-    # Continue with standard evaluation if it's not a follow-up to a "Nee" response
+    # Standard evaluation of the user's answer
     evaluation_deployment = client.deployments.invoke(
         key="Firm24-evaluate-user-input",
         context={"language": ["Dutch"]},
@@ -81,41 +68,39 @@ async def question(request: Request):
     )
     evaluation_result = evaluation_deployment.choices[0].message.content
 
+    # If the answer is "Nee", store the index and handle clarification
     if evaluation_result == "Nee":
-        # After handling the clarification, store the index to return to this question later
         current_question_indices[user_id] = question_index
 
-        # Send the clarification message to the user and get the response
         handle_answer_deployment = client.deployments.invoke(
             key="Firm24-handle-clarification",
             inputs={"previous_answer": previous_answer, "previous_question": previous_question}
         )
         handle_answer = handle_answer_deployment.choices[0].message.content
 
-        # Return the clarification message without changing the question index
         return {"rephrased_question": handle_answer, "quick_reply_options": []}
 
-    if question_index is None or question_index < 1:
+    # If following up on a "Nee" response, resend the previous question
+    if user_id in current_question_indices and question_index == current_question_indices[user_id]:
+        # Remove the stored index as we're now handling the follow-up
+        del current_question_indices[user_id]
+
+        # No need to rephrase the question, use the question from the POST request
+        return {"rephrased_question": previous_question, "quick_reply_options": []}
+
+    # If the answer is "Ja" or it's a new question, fetch the next question to ask
+    if question_index is None or question_index < 1 or question_index > len(questions_with_options):
         raise HTTPException(status_code=400, detail="Invalid question index")
 
-    print(f"Starting condition checking loop for question_index={question_index}")
-    
-    # Assuming there's a list of questions with conditions to check
-    if question_index <= len(questions_with_options):
-        q_index, question, quick_reply_options, condition = questions_with_options[question_index - 1]
-        # Your logic for checking the condition and deciding on the next question goes here
-    
-    else:
-        raise HTTPException(status_code=400, detail="No suitable question found")
+    # Fetch the next question to ask from the list
+    q_index, next_question, quick_reply_options, condition = questions_with_options[question_index - 1]
 
-    previous_context = f"Vraag: {previous_question}\nAntwoord: {previous_answer}" if previous_question and previous_answer else ""
-
-    deployment = client.deployments.invoke(
+    # Rephrase the next question using the initial 'deployment'
+    rephrased_question = client.deployments.invoke(
         key="Firm24_vragenlijst",
         context={"environments": []},
-        inputs={"question": question, "previous": previous_context}
-    )
-    rephrased_question = deployment.choices[0].message.content
+        inputs={"question": next_question, "previous": ""}
+    ).choices[0].message.content
 
     print(f"Sending to frontend: rephrased_question='{rephrased_question}', quick_reply_options={quick_reply_options}")
 
